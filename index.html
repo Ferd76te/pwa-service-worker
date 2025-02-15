@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gestione Ordini di Trasporto</title>
+  <link rel="manifest" href="?file=manifest.json">
+  <script>
+      if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.register("https://ferd76te.github.io/pwa-service-worker/")
+              .then(reg => console.log("✅ Service Worker registrato con successo!", reg))
+              .catch(err => console.log("❌ Service Worker non registrato", err));
+      }
+  </script>
+  <style>
+    /* Reset base */
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: Arial, sans-serif;
+      background: #f8f9fa;
+      text-align: center;
+      padding: 20px;
+      margin: 0;
+    }
+    .container {
+      max-width: 500px;
+      width: 90%;
+      margin: 20px auto;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    input, button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      font-size: 16px;
+    }
+    button {
+      background: #007bff;
+      color: white;
+      cursor: pointer;
+      border: none;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    .table-responsive {
+      overflow-x: auto;
+      margin-top: 20px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      border-radius: 8px;
+      margin: 0 auto;
+    }
+    th, td {
+      padding: 12px;
+      border-bottom: 1px solid #ddd;
+      text-align: center;
+      font-size: 14px;
+    }
+    th {
+      background: #007bff;
+      color: white;
+    }
+    tr:hover {
+      background: #f1f1f1;
+      cursor: pointer;
+    }
+    .notifica {
+      display: none;
+      position: fixed;
+      top: 15px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #28a745;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
+      z-index: 1000;
+      transition: opacity 0.5s ease-in-out;
+      display: flex;
+      align-items: center;
+    }
+    .notifica .chiudi {
+      margin-left: auto;
+      cursor: pointer;
+      font-size: 18px;
+    }
+    @media (max-width: 600px) {
+      h2, h3 {
+        font-size: 1.2em;
+      }
+      input, button {
+        font-size: 14px;
+        padding: 8px;
+      }
+      th, td {
+        font-size: 12px;
+        padding: 8px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="notifica" class="notifica">
+    <span id="notifica-messaggio">Le modifiche sono salvate.</span>
+    <span class="chiudi" onclick="nascondiNotifica()">✖</span>
+  </div>
+
+  <h2>🚛 Gestione Ordini di Trasporto</h2>
+
+  <div class="container">
+    <h3>➕ Inserisci un Nuovo Ordine</h3>
+    <input type="text" id="cliente" placeholder="Nome Cliente">
+    <input type="text" id="partenza" placeholder="Luogo di Partenza">
+    <input type="text" id="destinazione" placeholder="Luogo di Destinazione">
+    <button onclick="salvaOrdine()">📦 Salva Ordine</button>
+  </div>
+
+  <h3>📋 Lista Ordini</h3>
+  <div class="table-responsive">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Cliente</th>
+          <th>Partenza</th>
+          <th>Destinazione</th>
+          <th>Azioni</th>
+        </tr>
+      </thead>
+      <tbody id="ordersTable"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const FIREBASE_URL = "https://webapp-napolitrans-default-rtdb.europe-west1.firebasedatabase.app/";
+
+    function mostraNotifica(messaggio) {
+      let notifica = document.getElementById("notifica");
+      document.getElementById("notifica-messaggio").innerText = messaggio;
+      notifica.style.display = "flex";
+      notifica.style.opacity = "1";
+      setTimeout(() => { nascondiNotifica(); }, 3000);
+    }
+
+    function nascondiNotifica() {
+      let notifica = document.getElementById("notifica");
+      notifica.style.opacity = "0";
+      setTimeout(() => { notifica.style.display = "none"; }, 500);
+    }
+
+    async function salvaOrdine() {
+      let cliente = document.getElementById("cliente").value;
+      let partenza = document.getElementById("partenza").value;
+      let destinazione = document.getElementById("destinazione").value;
+
+      if (!cliente || !partenza || !destinazione) {
+        mostraNotifica("⚠️ Compila tutti i campi prima di salvare!");
+        return;
+      }
+
+      let data = {
+        id: new Date().getTime(),
+        cliente,
+        partenza,
+        destinazione,
+        timestamp: new Date().toISOString()
+      };
+
+      await fetch(FIREBASE_URL + "ordini/" + data.id + ".json", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      });
+
+      mostraNotifica("✅ Ordine salvato con successo!");
+      document.getElementById("cliente").value = "";
+      document.getElementById("partenza").value = "";
+      document.getElementById("destinazione").value = "";
+      caricaOrdini();
+    }
+
+    async function caricaOrdini() {
+      let response = await fetch(FIREBASE_URL + "ordini.json");
+      let data = await response.json();
+      let table = document.getElementById("ordersTable");
+      table.innerHTML = "";
+
+      for (let key in data) {
+        let ordine = data[key];
+        let row = `
+          <tr>
+            <td>${ordine.id}</td>
+            <td>${ordine.cliente}</td>
+            <td>${ordine.partenza}</td>
+            <td>${ordine.destinazione}</td>
+            <td><button onclick="eliminaOrdine('${key}')">🗑️ Elimina</button></td>
+          </tr>
+        `;
+        table.innerHTML += row;
+      }
+    }
+
+    async function eliminaOrdine(id) {
+      await fetch(FIREBASE_URL + "ordini/" + id + ".json", { method: "DELETE" });
+      mostraNotifica("🗑️ Ordine eliminato con successo!");
+      caricaOrdini();
+    }
+
+    caricaOrdini();
+  </script>
+
+</body>
+</html>
+
